@@ -14,7 +14,7 @@ export AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_REGION PROJ
 AWS ?= docker run --rm \
 	-e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN \
 	-e AWS_DEFAULT_REGION=$(AWS_REGION) \
-	-v $(CURDIR):/aws -w /aws \
+	-v "$(CURDIR):/aws" -w /aws \
 	amazon/aws-cli:latest
 
 AUTH_STACK ?= $(PROJECT_NAME)-auth
@@ -130,7 +130,7 @@ psql: ## Open psql against the application database
 
 aws-whoami: ## Verify the AWS credentials in .env
 	$(require-aws-credentials)
-	$(AWS) sts get-caller-identity
+	$(AWS) env
 
 aws-deploy: ## Deploy everything: sign-in, then the backend, then the frontend built against both
 	@$(MAKE) --no-print-directory aws-deploy-auth

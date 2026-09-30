@@ -1,0 +1,27 @@
+{
+  "family": "successful-service",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::260898619483:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::260898619483:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "backend",
+      "image": "260898619483.dkr.ecr.us-east-1.amazonaws.com/successful-backend:latest",
+      "portMappings": [{ "containerPort": 8000, "protocol": "tcp" }],
+      "environment": [
+        { "name": "DATABASE_URL", "value": "postgresql+asyncpg://app:SpryDb2026SecurePass!@meetings-db.cjoegkc4esve.eu-central-1.rds.amazonaws.com:5432/meetings" },
+        { "name": "APP_TIMEZONE", "value": "Europe/Kyiv" }
+      ],
+      "essential": true
+    },
+    {
+      "name": "frontend",
+      "image": "260898619483.dkr.ecr.us-east-1.amazonaws.com/successful-frontend:latest",
+      "portMappings": [{ "containerPort": 3000, "protocol": "tcp" }],
+      "essential": true
+    }
+  ]
+}
