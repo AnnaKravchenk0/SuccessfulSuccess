@@ -50,6 +50,8 @@ Resources:
         RecoveryMechanisms:
           - Name: verified_email
             Priority: 1
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: false
       Policies:
         PasswordPolicy:
           MinimumLength: 8
@@ -63,6 +65,9 @@ Resources:
           AttributeDataType: String
           Required: true
           Mutable: true
+      # Managed login needs Essentials; the first 10,000 monthly active users
+      # are free on this tier.
+      UserPoolTier: ESSENTIALS
       # Cognito's own mailer: free, but capped at 50 emails a day. Switch to SES
       # before real traffic arrives.
       EmailConfiguration:
@@ -78,6 +83,7 @@ Resources:
       UserPoolId: !Ref UserPool
       # Domain prefixes are unique per region across all accounts.
       Domain: !Sub "${ProjectName}-${AWS::AccountId}"
+      ManagedLoginVersion: 2
 
   GoogleIdentityProvider:
     Type: AWS::Cognito::UserPoolIdentityProvider
@@ -126,6 +132,15 @@ Resources:
       AllowedOAuthScopes: [openid, email, profile]
       CallbackURLs: !Ref AppUrls
       LogoutURLs: !Ref AppUrls
+
+  # Without this resource a ManagedLoginVersion 2 domain has no sign-in page to
+  # show. UseCognitoProvidedValues gives a working default look.
+  ManagedLoginBranding:
+    Type: AWS::Cognito::ManagedLoginBranding
+    Properties:
+      UserPoolId: !Ref UserPool
+      ClientId: !Ref UserPoolClient
+      UseCognitoProvidedValues: true
 
 Outputs:
   UserPoolId:
