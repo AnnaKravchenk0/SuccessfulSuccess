@@ -12,6 +12,7 @@ is a completely separate Lambda — the builder never calls it).
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import os
@@ -61,7 +62,6 @@ def handler(event: dict, context) -> dict:
             body = json.loads(raw_body)
         except Exception:
             try:
-                import ast
                 body = ast.literal_eval(raw_body)
             except Exception:
                 body = {}

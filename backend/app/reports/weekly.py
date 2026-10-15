@@ -7,6 +7,7 @@ import it and pass the result to S3.
 
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import logging
@@ -14,8 +15,10 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
-from app.db import SessionFactory
+from app.config import settings
 
 log = logging.getLogger(__name__)
 
@@ -116,13 +119,6 @@ def build_weekly_report(week: str) -> bytes:
     prev_start, prev_end = _iso_week_bounds(prev_week)
 
     log.info("building report", extra={"week": week, "start": start.isoformat(), "end": end.isoformat()})
-
-    # Run synchronously inside an asyncpg connection with a fresh NullPool
-    # engine so connections are created and closed on this loop.
-    import asyncio
-    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
-    from sqlalchemy.pool import NullPool
-    from app.config import settings
 
     async def _run() -> bytes:
         engine = create_async_engine(settings.database_url, poolclass=NullPool)
