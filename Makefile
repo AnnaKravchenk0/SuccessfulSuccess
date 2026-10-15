@@ -74,9 +74,14 @@ define require-db-password
 		exit 1; }
 endef
 
+REPORTS_STACK ?= $(PROJECT_NAME)-reports
+# Week for make report-now, e.g. make report-now WEEK=2026-W40
+WEEK ?=
+
 .PHONY: help up up-build down down-v logs ps migrate revision seed test lint fmt shell-backend psql \
         aws-whoami aws-deploy aws-deploy-auth aws-auth-env aws-ecr aws-push aws-deploy-backend aws-migrate aws-url aws-status aws-logs \
-        aws-frontend-cert aws-deploy-frontend aws-frontend-url aws-destroy
+        aws-frontend-cert aws-deploy-frontend aws-frontend-url aws-destroy \
+        aws-deploy-reports aws-reports-env report-now
 
 help:
 	@grep -hE '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -350,3 +355,70 @@ aws-destroy: ## Delete every stack, including the database and its data
 	$(AWS) cloudformation delete-stack --stack-name $(ECR_STACK)
 	$(AWS) cloudformation wait stack-delete-complete --stack-name $(ECR_STACK)
 	@echo "All stacks deleted."
+
+# --- Reports stack -----------------------------------------------------------
+
+aws-deploy-reports: ## Deploy the reports stack (SQS, EventBridge, builder + mailer Lambdas, S3, SES)
+	$(require-aws-credentials)
+	@test -n "$(REPORT_RECIPIENTS)" || { echo "REPORT_RECIPIENTS is empty — set it in .env (comma-separated emails)"; exit 1; }
+	@test -n "$(SENDER_EMAIL)"      || { echo "SENDER_EMAIL is empty — set it in .env (e.g. reports@yourdomain.com)"; exit 1; }
+	@vpc=$$($(AWS) ec2 describe-vpcs --filters Name=isDefault,Values=true \
+		--query 'Vpcs[0].VpcId' --output text | tr -d '[:space:]'); \
+		subnets=$$($(AWS) ec2 describe-subnets \
+			--filters Name=vpc-id,Values=$$vpc Name=default-for-az,Values=true \
+			--query 'Subnets[].SubnetId' --output text | tr '[:space:]' ',' | sed 's/,*$$//'); \
+		route_tables=$$($(AWS) ec2 describe-route-tables \
+			--filters Name=vpc-id,Values=$$vpc Name=association.main,Values=false \
+			--query 'RouteTables[?Associations[?SubnetId!=`null`]].RouteTableId' \
+			--output text | tr '[:space:]' ',' | sed 's/,*$$//'); \
+		sg=$$($(call stack-output,$(APP_STACK),FunctionSecurityGroup) 2>/dev/null | tr -d '[:space:]' || \
+		     $(AWS) cloudformation describe-stack-resource --stack-name $(APP_STACK) \
+		       --logical-resource-id FunctionSecurityGroup \
+		       --query 'StackResourceDetail.PhysicalResourceId' --output text | tr -d '[:space:]'); \
+		image=$$($(AWS) cloudformation describe-stack-resource --stack-name $(APP_STACK) \
+		       --logical-resource-id ApiFunction \
+		       --query 'StackResourceDetail.PhysicalResourceId' --output text | tr -d '[:space:]'); \
+		db_url=$$($(AWS) lambda get-function-configuration --function-name $(PROJECT_NAME)-backend \
+		       --query 'Environment.Variables.DATABASE_URL' --output text | tr -d '[:space:]'); \
+		img_uri=$$($(AWS) lambda get-function-configuration --function-name $(PROJECT_NAME)-backend \
+		       --query 'Code.ImageUri' --output text | tr -d '[:space:]' 2>/dev/null || \
+		       $(AWS) lambda get-function-configuration --function-name $(PROJECT_NAME)-backend \
+		       --query 'Code.ImageUri' --output text | tr -d '[:space:]'); \
+		$(call wait-stack-idle,$(REPORTS_STACK)); \
+		$(call clear-failed-create,$(REPORTS_STACK)); \
+		$(AWS) cloudformation deploy \
+			--stack-name $(REPORTS_STACK) \
+			--template-file infra/reports.yml \
+			--capabilities CAPABILITY_IAM \
+			--no-fail-on-empty-changeset \
+			$(STACK_TAGS) \
+			--parameter-overrides \
+				"ProjectName=$(PROJECT_NAME)" \
+				"VpcId=$$vpc" \
+				"SubnetIds=$$subnets" \
+				"SubnetRouteTableIds=$$route_tables" \
+				"BuilderSecurityGroupId=$$sg" \
+				"ImageUri=$$img_uri" \
+				"Architecture=$(AWS_LAMBDA_ARCH)" \
+				"DatabaseUrl=$$db_url" \
+				"AppTimezone=$(APP_TIMEZONE)" \
+				"ReportRecipients=$(REPORT_RECIPIENTS)" \
+				"SenderEmail=$(SENDER_EMAIL)" \
+				"ScheduleExpression=$(or $(SCHEDULE_EXPRESSION),cron(0 7 ? * MON *))"
+	@$(MAKE) --no-print-directory aws-reports-env
+
+aws-reports-env: ## Print the reports stack outputs
+	@$(call stack-outputs,$(REPORTS_STACK)) | awk -F '\t' '{printf "%-30s %s\n", $$1, $$2}'
+
+report-now: ## Send a report-request message to SQS: make report-now WEEK=2026-W40
+	$(require-aws-credentials)
+	@queue_url=$$($(call stack-output,$(REPORTS_STACK),ReportRequestsQueueUrl) | tr -d '[:space:]'); \
+		week="$(WEEK)"; \
+		if [ -z "$$week" ]; then \
+			week=$$(date -u -d "last monday" +"%G-W%V" 2>/dev/null || python3 -c \
+			  "from datetime import datetime,timedelta,timezone; d=datetime.now(timezone.utc)-timedelta(weeks=1); print(d.strftime('%G-W%V'))"); \
+		fi; \
+		echo "Sending report request for week $$week to $$queue_url"; \
+		$(AWS) sqs send-message \
+			--queue-url "$$queue_url" \
+			--message-body "{\"week\": \"$$week\", \"source\": \"manual\"}"

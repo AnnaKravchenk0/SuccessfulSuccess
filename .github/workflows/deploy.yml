@@ -27,7 +27,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install uv
           # Run linter and tests (adjust to your project setup)
-          uv pip install --system -r pyproject.toml || true
+          uv pip install --system -r backend/pyproject.toml || true
 
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -45,7 +45,7 @@ jobs:
           ECR_REPOSITORY: successfulsuccess-backend
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f Dockerfile.lambda .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f backend/Dockerfile.lambda backend
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Update Lambda Function Code to New Commit SHA Image
@@ -56,6 +56,10 @@ jobs:
         run: |
           aws lambda update-function-code \
             --function-name successfulsuccess-backend \
+            --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            --region us-east-1
+          aws lambda update-function-code \
+            --function-name successfulsuccess-report-builder \
             --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
             --region us-east-1
 
