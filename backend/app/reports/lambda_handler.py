@@ -55,9 +55,17 @@ def handler(event: dict, context) -> dict:
     week: str | None = None
 
     if "Records" in event:
-        # SQS message: body is a JSON string.
-        body = json.loads(event["Records"][0]["body"])
-        week = body.get("week") or None
+        raw_body = event["Records"][0].get("body", "{}")
+        try:
+            body = json.loads(raw_body)
+        except Exception:
+            try:
+                import ast
+                body = ast.literal_eval(raw_body)
+            except Exception:
+                body = {}
+        if isinstance(body, dict):
+            week = body.get("week") or None
     else:
         week = event.get("week") or None
 
