@@ -21,8 +21,9 @@ import boto3
 
 from app.reports.weekly import build_weekly_report
 
-log = logging.getLogger(__name__)
-logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+log = logging.getLogger("report_builder")
+logging.getLogger().setLevel(os.environ.get("LOG_LEVEL", "INFO"))
+log.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
 BUCKET = os.environ.get("REPORTS_BUCKET", "")
 
@@ -72,7 +73,7 @@ def handler(event: dict, context) -> dict:
     if not week:
         week = _previous_iso_week()
 
-    log.info("report-builder triggered", extra={"trigger": trigger, "week": week})
+    log.info(f"report-builder triggered: trigger={trigger} week={week}")
 
     # --- Build the CSV -------------------------------------------------------
     csv_bytes = build_weekly_report(week)

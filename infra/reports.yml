@@ -365,8 +365,9 @@ Resources:
 
           import boto3
 
-          log = logging.getLogger(__name__)
-          logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+          log = logging.getLogger("report_mailer")
+          logging.getLogger().setLevel(os.environ.get("LOG_LEVEL", "INFO"))
+          log.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
 
           RECIPIENTS = [r.strip() for r in os.environ.get("REPORT_RECIPIENTS", "").split(",") if r.strip()]
           SENDER    = os.environ.get("SENDER_EMAIL", "")
@@ -386,7 +387,7 @@ Resources:
               bucket  = record["bucket"]["name"]
               key     = record["object"]["key"]
 
-              log.info("report-mailer triggered", extra={"trigger": trigger, "bucket": bucket, "key": key})
+              log.info(f"report-mailer triggered: trigger={trigger} bucket={bucket} key={key}")
 
               if not RECIPIENTS:
                   log.warning("REPORT_RECIPIENTS is empty — nothing to send")
