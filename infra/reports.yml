@@ -405,7 +405,7 @@ Resources:
 
               # Build a MIME message with the CSV attached
               msg = email.message.EmailMessage()
-              msg["Subject"] = f"Weekly meetings report — {week}"
+              msg["Subject"] = f"Weekly meetings report - {week}"
               msg["From"]    = SENDER
               msg["To"]      = ", ".join(RECIPIENTS)
               msg.set_content(
