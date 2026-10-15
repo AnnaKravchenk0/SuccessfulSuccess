@@ -117,20 +117,27 @@ def build_weekly_report(week: str) -> bytes:
 
     log.info("building report", extra={"week": week, "start": start.isoformat(), "end": end.isoformat()})
 
-    # Run synchronously inside an asyncpg connection (the Lambda event loop
-    # cannot be nested, so we use the sync driver alias via run_sync).
+    # Run synchronously inside an asyncpg connection with a fresh NullPool
+    # engine so connections are created and closed on this loop.
     import asyncio
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+    from sqlalchemy.pool import NullPool
+    from app.config import settings
 
     async def _run() -> bytes:
-        async with SessionFactory() as session:
-            # Use the underlying sync connection for raw SQL convenience.
-            def _query(conn):
-                curr = _week_stats(conn, start, end)
-                prev = _week_stats(conn, prev_start, prev_end)
-                top5 = _top5(conn, start, end)
-                return curr, prev, top5
+        engine = create_async_engine(settings.database_url, poolclass=NullPool)
+        session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
+        try:
+            async with session_factory() as session:
+                def _query(conn):
+                    curr = _week_stats(conn, start, end)
+                    prev = _week_stats(conn, prev_start, prev_end)
+                    top5 = _top5(conn, start, end)
+                    return curr, prev, top5
 
-            curr, prev, top5 = await session.run_sync(_query)
+                curr, prev, top5 = await session.run_sync(_query)
+        finally:
+            await engine.dispose()
 
         buf = io.StringIO()
         w = csv.writer(buf)
