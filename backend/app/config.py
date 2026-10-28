@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     # empty they are fetched from Cognito on first use.
     cognito_jwks: str = ""
 
-    # Claude on Bedrock Mantle for the agenda parser (env: PARSER_MODEL).
-    parser_model: str = "anthropic.claude-haiku-4-5"
+    # Claude Haiku 4.5 via Bedrock Runtime US inference profile (env: PARSER_MODEL).
+    parser_model: str = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
 
     @field_validator("app_timezone")
     @classmethod

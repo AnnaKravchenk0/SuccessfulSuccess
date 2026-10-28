@@ -8,20 +8,21 @@ from __future__ import annotations
 
 from datetime import date
 
-from anthropic import AnthropicBedrockMantle
+from anthropic import AnthropicBedrock
 from pydantic import BaseModel, Field, ValidationError
 
+from app.ai.bedrock_client import make_bedrock_client
 from app.config import settings
 
 PROMPT_VERSION = "agenda-v1"
 
-# USD per million tokens (Bedrock Mantle regional, us-east-1). Used only for logging.
-# Primary model for this project: Claude Haiku 4.5.
+# USD per million tokens (Bedrock regional / US profile). Used only for logging.
 MODEL_PRICES_USD: dict[str, tuple[float, float]] = {
+    "us.anthropic.claude-haiku-4-5-20251001-v1:0": (1.10, 5.50),
+    "global.anthropic.claude-haiku-4-5-20251001-v1:0": (1.00, 5.00),
     "anthropic.claude-haiku-4-5": (1.10, 5.50),
 }
 DEFAULT_MODEL_PRICE_USD = (1.10, 5.50)
-
 
 
 class AgendaParseError(Exception):
@@ -80,13 +81,13 @@ def parse_agenda(
     today: date,
     tz: str,
     *,
-    client: AnthropicBedrockMantle | None = None,
+    client: AnthropicBedrock | None = None,
 ) -> tuple[ParsedAgenda, dict[str, int]]:
     """Ask Claude to call ``record_agenda`` once; validate and optionally retry."""
     if not text or not text.strip():
         raise AgendaParseError("pasted text is empty")
 
-    llm = client or AnthropicBedrockMantle(aws_region=settings.cognito_region or "us-east-1")
+    llm = client or make_bedrock_client()
     messages: list[dict] = [
         {
             "role": "user",
@@ -102,7 +103,6 @@ def parse_agenda(
         msg = llm.messages.create(
             model=settings.parser_model,
             max_tokens=4096,
-            output_config={"effort": "low"},
             system=SYSTEM,
             tools=[RECORD_AGENDA],
             messages=messages,

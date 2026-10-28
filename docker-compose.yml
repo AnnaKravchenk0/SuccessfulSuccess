@@ -33,7 +33,7 @@ services:
       COGNITO_REGION: ${AWS_REGION:-us-east-1}
       COGNITO_USER_POOL_ID: ${COGNITO_USER_POOL_ID:-}
       COGNITO_CLIENT_ID: ${COGNITO_CLIENT_ID:-}
-      PARSER_MODEL: ${PARSER_MODEL:-anthropic.claude-haiku-4-5}
+      PARSER_MODEL: ${PARSER_MODEL:-us.anthropic.claude-haiku-4-5-20251001-v1:0}
       # Used by `make llm-hello` / `make parse` (Bedrock Mantle via host credentials).
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}

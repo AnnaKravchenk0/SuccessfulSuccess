@@ -97,7 +97,7 @@ AI_STACK ?= $(PROJECT_NAME)-ai
 # Week for make report-now, e.g. make report-now WEEK=2026-W40
 WEEK ?=
 # Bedrock Mantle model for make llm-hello / parse / aws-deploy-ai
-PARSER_MODEL ?= anthropic.claude-haiku-4-5
+PARSER_MODEL ?= us.anthropic.claude-haiku-4-5-20251001-v1:0
 # Pasted text for make parse TEXT="..."
 TEXT ?=
 # Email for the $5/month Budgets alarm (defaults to REPORT_RECIPIENTS first address)

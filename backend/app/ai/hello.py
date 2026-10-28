@@ -1,18 +1,16 @@
-"""Smoke-test: one Claude call on Bedrock Mantle. Run with ``make llm-hello``."""
+"""Smoke-test: one Claude call on Bedrock Runtime. Run with ``make llm-hello``."""
 
 from __future__ import annotations
 
-from anthropic import AnthropicBedrockMantle
-
+from app.ai.bedrock_client import make_bedrock_client
 from app.config import settings
 
 
 def main() -> None:
-    client = AnthropicBedrockMantle(aws_region=settings.cognito_region or "us-east-1")
+    client = make_bedrock_client()
     msg = client.messages.create(
         model=settings.parser_model,
         max_tokens=1024,
-        output_config={"effort": "low"},
         messages=[
             {
                 "role": "user",

@@ -22,8 +22,8 @@ Parameters:
 
   ParserModel:
     Type: String
-    Default: anthropic.claude-haiku-4-5
-    Description: Claude Haiku 4.5 on Bedrock Mantle (PARSER_MODEL).
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: Claude Haiku 4.5 Bedrock Runtime US inference profile (PARSER_MODEL).
 
   CognitoUserPoolId:
     Type: String
@@ -68,14 +68,15 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
-        - PolicyName: bedrock-mantle
+        - PolicyName: bedrock-runtime-invoke
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               # Narrowing the resource is a discussion question in the lab.
               - Effect: Allow
                 Action:
-                  - bedrock-mantle:CreateInference
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
                 Resource: "*"
       Tags:
         - Key: PROJECT_NAME
@@ -85,7 +86,7 @@ Resources:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: !Sub "${ProjectName}-agenda-parser"
-      Description: Parses pasted agenda text with Claude on Bedrock Mantle
+      Description: Parses pasted agenda text with Claude on Bedrock Runtime
       PackageType: Image
       Code:
         ImageUri: !Ref ImageUri
@@ -96,7 +97,7 @@ Resources:
       Role: !GetAtt ParserRole.Arn
       MemorySize: 512
       Timeout: 30
-      # No VpcConfig: needs public internet for Bedrock Mantle (and Cognito JWKS).
+      # No VpcConfig: needs public internet for Bedrock Runtime (and Cognito JWKS).
       LoggingConfig:
         LogGroup: !Ref ParserLogGroup
       Environment:
