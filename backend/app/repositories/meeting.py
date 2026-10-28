@@ -5,13 +5,13 @@ behaves exactly like one that does not exist.
 """
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models import Meeting, Participant
-from app.schemas import MeetingCreate
+from app.models import ActionItemRow, AgendaItemRow, Meeting, Participant
+from app.schemas import AgendaSave, MeetingCreate
 
 
 class MeetingRepository:
@@ -93,6 +93,47 @@ class MeetingRepository:
         )
         await self.session.commit()
         return bool(result.rowcount)
+
+    async def save_agenda(self, meeting: Meeting, payload: AgendaSave) -> Meeting:
+        """Replace agenda/action items and optionally title, timing, and AI suggestion."""
+        if payload.title:
+            meeting.name = payload.title
+
+        if payload.starts_at is not None and payload.duration_minutes is not None:
+            meeting.starts_at = payload.starts_at
+            meeting.ends_at = payload.starts_at + timedelta(minutes=payload.duration_minutes)
+        elif payload.starts_at is not None:
+            duration = meeting.ends_at - meeting.starts_at
+            meeting.starts_at = payload.starts_at
+            meeting.ends_at = payload.starts_at + duration
+        elif payload.duration_minutes is not None:
+            meeting.ends_at = meeting.starts_at + timedelta(minutes=payload.duration_minutes)
+
+        meeting.agenda_language = payload.language
+        meeting.ai_suggestion = (
+            payload.ai_suggestion.model_dump(mode="json") if payload.ai_suggestion else None
+        )
+        meeting.agenda_items = [
+            AgendaItemRow(
+                topic=item.topic,
+                owner=item.owner,
+                minutes=item.minutes,
+                position=index,
+            )
+            for index, item in enumerate(payload.items)
+        ]
+        meeting.action_items = [
+            ActionItemRow(
+                task=item.task,
+                owner=item.owner,
+                due=item.due,
+                position=index,
+            )
+            for index, item in enumerate(payload.action_items)
+        ]
+        await self.session.commit()
+        await self.session.refresh(meeting)
+        return meeting
 
     async def count(self) -> int:
         return int(

@@ -1,7 +1,10 @@
 """ORM models for meetings and their participants."""
 
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
     CheckConstraint,
@@ -13,10 +16,15 @@ from sqlalchemy import (
     Text,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
+
+if TYPE_CHECKING:
+    from app.models.agenda import ActionItemRow, AgendaItemRow
+
 
 
 class Meeting(Base):
@@ -40,6 +48,10 @@ class Meeting(Base):
     location: Mapped[str | None] = mapped_column(String(200), nullable=True)
     starts_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     ends_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # What the model suggested when the user last used "Paste an agenda", plus
+    # model id and prompt version. Null until an AI-assisted save.
+    ai_suggestion: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    agenda_language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -47,10 +59,22 @@ class Meeting(Base):
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    participants: Mapped[list["Participant"]] = relationship(
+    participants: Mapped[list[Participant]] = relationship(
         back_populates="meeting",
         cascade="all, delete-orphan",
         order_by="Participant.position",
+        lazy="selectin",
+    )
+    agenda_items: Mapped[list[AgendaItemRow]] = relationship(
+        back_populates="meeting",
+        cascade="all, delete-orphan",
+        order_by="AgendaItemRow.position",
+        lazy="selectin",
+    )
+    action_items: Mapped[list[ActionItemRow]] = relationship(
+        back_populates="meeting",
+        cascade="all, delete-orphan",
+        order_by="ActionItemRow.position",
         lazy="selectin",
     )
 

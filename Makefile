@@ -93,13 +93,21 @@ define require-db-password
 endef
 
 REPORTS_STACK ?= $(PROJECT_NAME)-reports
+AI_STACK ?= $(PROJECT_NAME)-ai
 # Week for make report-now, e.g. make report-now WEEK=2026-W40
 WEEK ?=
+# Bedrock Mantle model for make llm-hello / parse / aws-deploy-ai
+PARSER_MODEL ?= anthropic.claude-haiku-4-5
+# Pasted text for make parse TEXT="..."
+TEXT ?=
+# Email for the $5/month Budgets alarm (defaults to REPORT_RECIPIENTS first address)
+BUDGET_ALERT_EMAIL ?=
 
 .PHONY: help up up-build down down-v logs ps migrate revision seed test lint fmt shell-backend psql \
         aws-whoami aws-deploy aws-deploy-auth aws-auth-env aws-ecr aws-push aws-deploy-backend aws-migrate aws-url aws-status aws-logs \
         aws-frontend-cert aws-deploy-frontend aws-frontend-url aws-destroy \
-        aws-deploy-reports aws-reports-env report-now
+        aws-deploy-reports aws-reports-env report-now \
+        llm-hello parse aws-deploy-ai aws-ai-env
 
 help:
 	@grep -hE '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -322,10 +330,13 @@ aws-deploy-frontend: ## Deploy the frontend to S3 + CloudFront, built against th
 		auth_out() { printf '%s\n' "$$auth" | awk -F '\t' -v k="$$1" '$$1 == k { print $$2 }'; }; \
 		bucket=$$($(call stack-output,$(FRONTEND_STACK),BucketName) | tr -d '[:space:]'); \
 		dist=$$($(call stack-output,$(FRONTEND_STACK),DistributionId) | tr -d '[:space:]'); \
-		echo "Building the static export against $$api"; \
+		parser=$$($(call stack-output,$(AI_STACK),ParserUrl) 2>/dev/null | tr -d '[:space:]'); \
+		case "$$parser" in ""|None) parser_arg="" ;; *) parser_arg="--build-arg NEXT_PUBLIC_PARSER_URL=$$parser" ;; esac; \
+		echo "Building the static export against $$api$${parser:+ (parser $$parser)}"; \
 		rm -rf frontend/out; \
 		docker build --target export --output type=local,dest=frontend/out \
 			--build-arg NEXT_PUBLIC_API_BASE_URL="$$api" \
+			$$parser_arg \
 			--build-arg NEXT_PUBLIC_COGNITO_USER_POOL_ID="$$(auth_out UserPoolId)" \
 			--build-arg NEXT_PUBLIC_COGNITO_CLIENT_ID="$$(auth_out UserPoolClientId)" \
 			--build-arg NEXT_PUBLIC_COGNITO_DOMAIN="$$(auth_out HostedDomain)" \
@@ -440,3 +451,63 @@ report-now: ## Send a report-request message to SQS: make report-now WEEK=2026-W
 		$(AWS) sqs send-message \
 			--queue-url "$$queue_url" \
 			--message-body "{\"week\": \"$$week\", \"source\": \"manual\"}"
+
+# --- AI / agenda parser (lab Part 4) ----------------------------------------
+
+llm-hello: ## Call Claude on Bedrock Mantle once (prints answer, stop_reason, usage)
+	$(COMPOSE) run --rm --no-deps \
+		-e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN \
+		-e AWS_DEFAULT_REGION=$(AWS_REGION) -e AWS_REGION=$(AWS_REGION) \
+		-e PARSER_MODEL=$(PARSER_MODEL) \
+		backend python -m app.ai.hello
+
+parse: ## Parse pasted agenda text: make parse TEXT="Пн 10:00, синк…"
+	@test -n "$(TEXT)" || { echo 'Usage: make parse TEXT="..."'; exit 1; }
+	$(COMPOSE) run --rm --no-deps \
+		-e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY -e AWS_SESSION_TOKEN \
+		-e AWS_DEFAULT_REGION=$(AWS_REGION) -e AWS_REGION=$(AWS_REGION) \
+		-e PARSER_MODEL=$(PARSER_MODEL) -e APP_TIMEZONE=$(APP_TIMEZONE) \
+		backend python -m app.ai.parse_cli "$(TEXT)"
+
+aws-deploy-ai: ## Deploy the agenda-parser Lambda (outside VPC) + $5 Budgets alarm
+	$(require-aws-credentials)
+	@email="$(BUDGET_ALERT_EMAIL)"; \
+		if [ -z "$$email" ]; then email="$$(echo "$(REPORT_RECIPIENTS)" | cut -d, -f1 | tr -d '[:space:]')"; fi; \
+		test -n "$$email" || { echo "Set BUDGET_ALERT_EMAIL or REPORT_RECIPIENTS in .env"; exit 1; }; \
+		pool=$$($(call stack-output,$(AUTH_STACK),UserPoolId) 2>/dev/null | tr -d '[:space:]'); \
+		client=$$($(call stack-output,$(AUTH_STACK),UserPoolClientId) | tr -d '[:space:]'); \
+		case "$$pool" in ""|None) echo "No user pool — run: make aws-deploy-auth"; exit 1 ;; esac; \
+		img_uri=$$($(AWS) lambda get-function-configuration --function-name $(PROJECT_NAME)-backend \
+			--query 'Code.ImageUri' --output text | tr -d '[:space:]'); \
+		test -n "$$img_uri" -a "$$img_uri" != "None" || { echo "No backend image — run: make aws-deploy-backend"; exit 1; }; \
+		cors="$(AWS_CORS_ORIGINS)"; \
+		if [ -z "$$cors" ]; then \
+			cors=$$($(call stack-output,$(FRONTEND_STACK),AllowedOrigins) 2>/dev/null | tr -d '[:space:]'); \
+			case "$$cors" in ""|None) cors="http://localhost:$(or $(FRONTEND_PORT),3000)" ;; esac; \
+		fi; \
+		# Always allow local Next.js during development.
+		case ",$$cors," in *,http://localhost:3000,*) ;; *) cors="$$cors,http://localhost:3000" ;; esac; \
+		echo "image=$$img_uri model=$(PARSER_MODEL) cors=$$cors alert=$$email"; \
+		$(call wait-stack-idle,$(AI_STACK)); \
+		$(call clear-failed-create,$(AI_STACK)); \
+		$(AWS) cloudformation deploy \
+			--stack-name $(AI_STACK) \
+			--template-file infra/ai.yml \
+			--capabilities CAPABILITY_NAMED_IAM \
+			--no-fail-on-empty-changeset \
+			$(STACK_TAGS) \
+			--parameter-overrides \
+				"ProjectName=$(PROJECT_NAME)" \
+				"ImageUri=$$img_uri" \
+				"Architecture=$(AWS_LAMBDA_ARCH)" \
+				"ParserModel=$(PARSER_MODEL)" \
+				"CognitoUserPoolId=$$pool" \
+				"CognitoClientId=$$client" \
+				"CorsOrigins=$$cors" \
+				"BudgetAlertEmail=$$email"
+	@$(MAKE) --no-print-directory aws-ai-env
+
+aws-ai-env: ## Print the AI stack outputs (ParserUrl to put in .env)
+	@$(call stack-outputs,$(AI_STACK)) | awk -F '\t' ' \
+		$$1 == "ParserUrl" { print "NEXT_PUBLIC_PARSER_URL=" $$2 } \
+		{ printf "%-30s %s\n", $$1, $$2 }' | tr -d '\r'

@@ -1,7 +1,16 @@
 "use client"
 
 import { useRef } from "react"
-import { CalendarDays, Clock, Mail, MapPin, Pencil, Trash2, Users } from "lucide-react"
+import {
+  CalendarDays,
+  Clock,
+  ListChecks,
+  Mail,
+  MapPin,
+  Pencil,
+  Trash2,
+  Users,
+} from "lucide-react"
 
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -28,14 +37,19 @@ export function MeetingDetailsDialog({
   onOpenChange,
   onEdit,
   onDelete,
+  onAgenda,
 }: {
   meeting?: Meeting
   open: boolean
   onOpenChange: (open: boolean) => void
   onEdit: (meeting: Meeting) => void
   onDelete: (meeting: Meeting) => void
+  onAgenda: (meeting: Meeting) => void
 }) {
   const editRef = useRef<HTMLButtonElement>(null)
+  const agendaCount = meeting?.agenda_items?.length ?? 0
+  const actionCount = meeting?.action_items?.length ?? 0
+
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -79,6 +93,43 @@ export function MeetingDetailsDialog({
           {meeting.description ? (
             <p className="text-sm leading-relaxed whitespace-pre-wrap">{meeting.description}</p>
           ) : null}
+
+          <Separator />
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="flex items-center gap-2 text-sm font-semibold">
+                <ListChecks className="size-4" aria-hidden />
+                Agenda
+                <span className="text-muted-foreground font-normal tabular-nums">
+                  {agendaCount} items
+                  {actionCount ? ` · ${actionCount} actions` : ""}
+                </span>
+              </h3>
+              <Button type="button" variant="outline" size="sm" onClick={() => onAgenda(meeting)}>
+                {agendaCount ? "Edit agenda" : "Add agenda"}
+              </Button>
+            </div>
+            {agendaCount === 0 ? (
+              <p className="text-muted-foreground text-sm">
+                No agenda yet. Paste notes or type it by hand.
+              </p>
+            ) : (
+              <ol className="list-decimal space-y-1 pl-5 text-sm">
+                {meeting.agenda_items.map((item) => (
+                  <li key={item.id ?? item.topic}>
+                    <span className="font-medium">{item.topic}</span>
+                    {item.owner ? (
+                      <span className="text-muted-foreground"> — {item.owner}</span>
+                    ) : null}
+                    {item.minutes != null ? (
+                      <span className="text-muted-foreground"> ({item.minutes} min)</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
 
           <Separator />
 

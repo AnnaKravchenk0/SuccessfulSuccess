@@ -9,7 +9,7 @@ from app.config import settings
 from app.models import Meeting
 from app.repositories.meeting import MeetingRepository
 from app.repositories.user import UserRepository
-from app.schemas import MeetingCreate
+from app.schemas import AgendaSave, MeetingCreate
 
 
 class MeetingNotFoundError(Exception):
@@ -70,3 +70,7 @@ class MeetingService:
     async def delete(self, meeting_id: uuid.UUID) -> None:
         if not await self.repo.delete(meeting_id):
             raise MeetingNotFoundError(meeting_id)
+
+    async def save_agenda(self, meeting_id: uuid.UUID, payload: AgendaSave) -> Meeting:
+        meeting = await self.get(meeting_id)
+        return await self.repo.save_agenda(meeting, payload)

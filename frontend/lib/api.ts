@@ -2,16 +2,20 @@ import { signOut } from "aws-amplify/auth"
 
 import { getAccessToken } from "@/lib/auth"
 import type {
+  AgendaSaveInput,
   ApiErrorBody,
   ApiErrorDetail,
   Meeting,
   MeetingCreateInput,
   MeetingList,
+  ParseAgendaResponse,
   UserProfile,
 } from "@/lib/types"
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000"
+
+export const PARSER_URL = process.env.NEXT_PUBLIC_PARSER_URL ?? ""
 
 export class ApiError extends Error {
   readonly code: string
@@ -98,6 +102,73 @@ export function updateMeeting(id: string, payload: MeetingCreateInput) {
 
 export function deleteMeeting(id: string) {
   return request<void>(`/api/v1/meetings/${id}`, { method: "DELETE" })
+}
+
+export function saveAgenda(meetingId: string, payload: AgendaSaveInput) {
+  return request<Meeting>(`/api/v1/meetings/${meetingId}/agenda`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  })
+}
+
+/** Call the agenda-parser Function URL (Bedrock). Not the main API. */
+export async function parseAgendaText(
+  text: string,
+  today: string,
+  tz: string,
+  signal?: AbortSignal,
+): Promise<ParseAgendaResponse> {
+  if (!PARSER_URL) {
+    throw new ApiError(
+      0,
+      "parser_not_configured",
+      "NEXT_PUBLIC_PARSER_URL is not set. Deploy the AI stack and paste ParserUrl into .env.",
+      [],
+    )
+  }
+
+  const token = await getAccessToken()
+  let response: Response
+  try {
+    response = await fetch(PARSER_URL, {
+      method: "POST",
+      signal,
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ text, today, tz }),
+    })
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new ApiError(0, "aborted", "Parsing was cancelled.", [])
+    }
+    throw new ApiError(0, "network_error", "Could not reach the agenda parser.", [])
+  }
+
+  if (response.status === 401) {
+    void signOut()
+    throw new ApiError(401, "unauthorized", "Sign in to continue.", [])
+  }
+
+  const payload = await response.json().catch(() => null)
+  if (!response.ok) {
+    const message =
+      (payload && typeof payload === "object" && "error" in payload
+        ? String((payload as { error: unknown }).error)
+        : null) || `Parser failed with status ${response.status}.`
+    const code =
+      response.status === 413
+        ? "payload_too_large"
+        : response.status === 422
+          ? "parse_failed"
+          : response.status === 429 || response.status === 503
+            ? "busy"
+            : "parser_error"
+    throw new ApiError(response.status, code, message, [])
+  }
+
+  return payload as ParseAgendaResponse
 }
 
 export function getMe() {

@@ -126,6 +126,55 @@ class CognitoVerifier:
         """Check an ID token and return its claims (the user's profile)."""
         return await self._claims(token, "id")
 
+    def _load_keys_sync(self, refresh: bool = False) -> jwt.PyJWKSet:
+        """Synchronous JWKS load for plain Lambda handlers (no event loop)."""
+        if self._keys is None or refresh:
+            if self._static_jwks:
+                document = _parse_jwks(self._static_jwks)
+            else:
+                document = self._fetch_jwks()
+            self._keys = jwt.PyJWKSet.from_dict(document)
+        return self._keys
+
+    def _signing_key_sync(self, kid: str) -> jwt.PyJWK:
+        keys = self._load_keys_sync()
+        for key in keys.keys:
+            if key.key_id == kid:
+                return key
+        if not self._static_jwks:
+            for key in self._load_keys_sync(refresh=True).keys:
+                if key.key_id == kid:
+                    return key
+        raise AuthError("The token was signed with an unknown key.")
+
+    def verify_sync(self, token: str) -> CurrentUser:
+        """Check an access token without asyncio (agenda-parser Lambda)."""
+        try:
+            header = jwt.get_unverified_header(token)
+        except jwt.PyJWTError as exc:
+            raise AuthError("The token is malformed.") from exc
+
+        key = self._signing_key_sync(header.get("kid", ""))
+        try:
+            claims = jwt.decode(
+                token,
+                key,
+                algorithms=["RS256"],
+                issuer=self.issuer,
+                audience=None,
+                options={"require": ["exp", "iat", "iss", "sub", "token_use"]},
+            )
+        except jwt.ExpiredSignatureError as exc:
+            raise AuthError("The token has expired.") from exc
+        except jwt.PyJWTError as exc:
+            raise AuthError("The token is invalid.") from exc
+
+        if claims["token_use"] != "access":
+            raise AuthError("An access token is required.")
+        if claims.get("client_id") != self.client_id:
+            raise AuthError("The access token was issued to another client.")
+        return CurrentUser(sub=claims["sub"], username=claims.get("username"))
+
 
 @lru_cache
 def get_verifier() -> CognitoVerifier:
@@ -134,6 +183,14 @@ def get_verifier() -> CognitoVerifier:
     return CognitoVerifier(
         settings.cognito_issuer, settings.cognito_client_id, settings.cognito_jwks
     )
+
+
+def verify_access_token_sync(authorization: str) -> CurrentUser:
+    """Verify ``Authorization: Bearer …`` for non-FastAPI Lambda handlers."""
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise AuthError("Sign in to continue.")
+    return get_verifier().verify_sync(token.strip())
 
 
 _bearer = HTTPBearer(auto_error=False)

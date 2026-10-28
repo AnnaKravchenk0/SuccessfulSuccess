@@ -7,6 +7,53 @@ export type Participant = {
   position: number
 }
 
+export type AgendaItem = {
+  id?: string
+  topic: string
+  owner: string | null
+  minutes: number | null
+  position?: number
+}
+
+export type ActionItem = {
+  id?: string
+  task: string
+  owner: string | null
+  due: string | null
+  position?: number
+}
+
+export type ParsedAgenda = {
+  title: string | null
+  starts_at: string | null
+  duration_minutes: number | null
+  items: AgendaItem[]
+  action_items: ActionItem[]
+  language: string
+}
+
+export type AiSuggestion = {
+  agenda: ParsedAgenda
+  model: string
+  prompt_version: string
+}
+
+export type AgendaSaveInput = {
+  title?: string | null
+  starts_at?: string | null
+  duration_minutes?: number | null
+  items: Array<{ topic: string; owner?: string | null; minutes?: number | null }>
+  action_items: Array<{ task: string; owner?: string | null; due?: string | null }>
+  language?: string | null
+  ai_suggestion?: AiSuggestion | null
+}
+
+export type ParseAgendaResponse = {
+  agenda: ParsedAgenda
+  model: string
+  prompt_version: string
+}
+
 export type Meeting = {
   id: string
   name: string
@@ -15,6 +62,10 @@ export type Meeting = {
   starts_at: string
   ends_at: string
   participants: Participant[]
+  agenda_items?: AgendaItem[]
+  action_items?: ActionItem[]
+  agenda_language?: string | null
+  ai_suggestion?: AiSuggestion | Record<string, unknown> | null
   created_at: string
   updated_at: string
 }

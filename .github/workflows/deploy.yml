@@ -62,6 +62,12 @@ jobs:
             --function-name successfulsuccess-report-builder \
             --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
             --region us-east-1
+          # Agenda parser shares the backend image; ImageConfig keeps its own handler.
+          # Ignore failure until the AI stack has been created once.
+          aws lambda update-function-code \
+            --function-name successfulsuccess-agenda-parser \
+            --image-uri $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG \
+            --region us-east-1 || true
 
       - name: Run Database Migration
         run: |

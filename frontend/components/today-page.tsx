@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 
+import { AgendaDialog } from "@/components/agenda-dialog"
 import { AppHeader } from "@/components/app-header"
 import { DeleteMeetingDialog } from "@/components/delete-meeting-dialog"
 import { MeetingDetailsDialog } from "@/components/meeting-details-dialog"
@@ -16,6 +17,7 @@ type DialogState =
   | { kind: "none" }
   | { kind: "form"; meeting?: Meeting }
   | { kind: "details"; meeting: Meeting }
+  | { kind: "agenda"; meeting: Meeting }
   | { kind: "delete"; meeting: Meeting }
 
 export function TodayPage({ initialDialogOpen = false }: { initialDialogOpen?: boolean }) {
@@ -41,6 +43,7 @@ export function TodayPage({ initialDialogOpen = false }: { initialDialogOpen?: b
   const onCreate = () => open({ kind: "form" })
   const onView = (meeting: Meeting) => open({ kind: "details", meeting })
   const onEdit = (meeting: Meeting) => open({ kind: "form", meeting })
+  const onAgenda = (meeting: Meeting) => open({ kind: "agenda", meeting })
   const onDelete = (meeting: Meeting) => open({ kind: "delete", meeting })
 
   return (
@@ -78,6 +81,12 @@ export function TodayPage({ initialDialogOpen = false }: { initialDialogOpen?: b
         meeting={current}
         onEdit={onEdit}
         onDelete={onDelete}
+        onAgenda={onAgenda}
+      />
+      <AgendaDialog
+        open={dialog.kind === "agenda"}
+        onOpenChange={(isOpen) => !isOpen && close()}
+        meeting={current}
       />
       <DeleteMeetingDialog
         open={dialog.kind === "delete"}
