@@ -78,11 +78,12 @@ function fromMeeting(meeting: Meeting): FormState {
 }
 
 function fromParsed(agenda: ParsedAgenda, fallback: FormState): FormState {
+  // Keep this meeting's slot. Applying the model's starts_at (e.g. "Monday")
+  // used to move the row off Today's list and look like a delete.
   return {
     title: agenda.title ?? fallback.title,
-    startsAt: agenda.starts_at ? agenda.starts_at.slice(0, 16) : fallback.startsAt,
-    durationMinutes:
-      agenda.duration_minutes != null ? String(agenda.duration_minutes) : fallback.durationMinutes,
+    startsAt: fallback.startsAt,
+    durationMinutes: fallback.durationMinutes,
     language: agenda.language || fallback.language,
     items:
       agenda.items.length > 0
@@ -106,8 +107,6 @@ function fromParsed(agenda: ParsedAgenda, fallback: FormState): FormState {
 function suggestedFromParsed(agenda: ParsedAgenda): SuggestedKeys {
   const keys = new Set<string>()
   if (agenda.title) keys.add("title")
-  if (agenda.starts_at) keys.add("startsAt")
-  if (agenda.duration_minutes != null) keys.add("durationMinutes")
   if (agenda.language) keys.add("language")
   agenda.items.forEach((item, index) => {
     if (item.topic) keys.add(`items.${index}.topic`)
@@ -218,6 +217,7 @@ export function AgendaDialog({
 
   const onSave = async () => {
     if (!meeting) return
+    const baseline = fromMeeting(meeting)
     const items = form.items
       .map((item) => ({
         topic: item.topic.trim(),
@@ -233,15 +233,24 @@ export function AgendaDialog({
       }))
       .filter((item) => item.task)
 
+    const titleChanged = form.title.trim() !== baseline.title.trim()
+    const startsChanged = form.startsAt !== baseline.startsAt
+    const durationChanged = form.durationMinutes.trim() !== baseline.durationMinutes.trim()
+
     try {
       await save.mutateAsync({
         id: meeting.id,
         payload: {
-          title: form.title.trim() || null,
-          starts_at: form.startsAt ? new Date(form.startsAt).toISOString() : null,
-          duration_minutes: form.durationMinutes.trim()
-            ? Number(form.durationMinutes)
-            : null,
+          title: titleChanged ? form.title.trim() || null : null,
+          // Only move the meeting when the user edits Starts at / Duration.
+          starts_at:
+            startsChanged && form.startsAt
+              ? new Date(form.startsAt).toISOString()
+              : null,
+          duration_minutes:
+            durationChanged && form.durationMinutes.trim()
+              ? Number(form.durationMinutes)
+              : null,
           items,
           action_items,
           language: form.language.trim() || null,
