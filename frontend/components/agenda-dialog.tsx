@@ -44,6 +44,8 @@ function emptyForm(): FormState {
 }
 
 function fromMeeting(meeting: Meeting): FormState {
+  const agendaItems = meeting.agenda_items ?? []
+  const actionItems = meeting.action_items ?? []
   return {
     title: meeting.name,
     startsAt: meeting.starts_at.slice(0, 16),
@@ -57,16 +59,16 @@ function fromMeeting(meeting: Meeting): FormState {
     ),
     language: meeting.agenda_language ?? "",
     items:
-      meeting.agenda_items?.length > 0
-        ? meeting.agenda_items.map((item) => ({
+      agendaItems.length > 0
+        ? agendaItems.map((item) => ({
             topic: item.topic,
             owner: item.owner ?? "",
             minutes: item.minutes != null ? String(item.minutes) : "",
           }))
         : [{ topic: "", owner: "", minutes: "" }],
     actionItems:
-      meeting.action_items?.length > 0
-        ? meeting.action_items.map((item) => ({
+      actionItems.length > 0
+        ? actionItems.map((item) => ({
             task: item.task,
             owner: item.owner ?? "",
             due: item.due ?? "",

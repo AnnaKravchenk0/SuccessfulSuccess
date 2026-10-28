@@ -472,39 +472,40 @@ parse: ## Parse pasted agenda text: make parse TEXT="Пн 10:00, синк…"
 aws-deploy-ai: ## Deploy the agenda-parser Lambda (outside VPC) + $5 Budgets alarm
 	$(require-aws-credentials)
 	@email="$(BUDGET_ALERT_EMAIL)"; \
-		if [ -z "$$email" ]; then email="$$(echo "$(REPORT_RECIPIENTS)" | cut -d, -f1 | tr -d '[:space:]')"; fi; \
-		test -n "$$email" || { echo "Set BUDGET_ALERT_EMAIL or REPORT_RECIPIENTS in .env"; exit 1; }; \
-		pool=$$($(call stack-output,$(AUTH_STACK),UserPoolId) 2>/dev/null | tr -d '[:space:]'); \
-		client=$$($(call stack-output,$(AUTH_STACK),UserPoolClientId) | tr -d '[:space:]'); \
-		case "$$pool" in ""|None) echo "No user pool — run: make aws-deploy-auth"; exit 1 ;; esac; \
-		img_uri=$$($(AWS) lambda get-function-configuration --function-name $(PROJECT_NAME)-backend \
-			--query 'Code.ImageUri' --output text | tr -d '[:space:]'); \
-		test -n "$$img_uri" -a "$$img_uri" != "None" || { echo "No backend image — run: make aws-deploy-backend"; exit 1; }; \
-		cors="$(AWS_CORS_ORIGINS)"; \
-		if [ -z "$$cors" ]; then \
-			cors=$$($(call stack-output,$(FRONTEND_STACK),AllowedOrigins) 2>/dev/null | tr -d '[:space:]'); \
-			case "$$cors" in ""|None) cors="http://localhost:$(or $(FRONTEND_PORT),3000)" ;; esac; \
-		fi; \
-		# Always allow local Next.js during development.
-		case ",$$cors," in *,http://localhost:3000,*) ;; *) cors="$$cors,http://localhost:3000" ;; esac; \
-		echo "image=$$img_uri model=$(PARSER_MODEL) cors=$$cors alert=$$email"; \
-		$(call wait-stack-idle,$(AI_STACK)); \
-		$(call clear-failed-create,$(AI_STACK)); \
-		$(AWS) cloudformation deploy \
-			--stack-name $(AI_STACK) \
-			--template-file infra/ai.yml \
-			--capabilities CAPABILITY_NAMED_IAM \
-			--no-fail-on-empty-changeset \
-			$(STACK_TAGS) \
-			--parameter-overrides \
-				"ProjectName=$(PROJECT_NAME)" \
-				"ImageUri=$$img_uri" \
-				"Architecture=$(AWS_LAMBDA_ARCH)" \
-				"ParserModel=$(PARSER_MODEL)" \
-				"CognitoUserPoolId=$$pool" \
-				"CognitoClientId=$$client" \
-				"CorsOrigins=$$cors" \
-				"BudgetAlertEmail=$$email"
+	if [ -z "$$email" ]; then email="$$(echo "$(REPORT_RECIPIENTS)" | cut -d, -f1 | tr -d ' \t\r\n')"; fi; \
+	test -n "$$email" || { echo "Set BUDGET_ALERT_EMAIL or REPORT_RECIPIENTS in .env"; exit 1; }; \
+	pool=$$($(call stack-output,$(AUTH_STACK),UserPoolId) 2>/dev/null | tr -d ' \t\r\n'); \
+	client=$$($(call stack-output,$(AUTH_STACK),UserPoolClientId) | tr -d ' \t\r\n'); \
+	case "$$pool" in ""|None) echo "No user pool - run: make aws-deploy-auth"; exit 1 ;; esac; \
+	img_uri=$$(aws lambda get-function --function-name $(PROJECT_NAME)-backend --region $(AWS_REGION) \
+		--query 'Code.ImageUri' --output text 2>/dev/null | tr -d ' \t\r\n'); \
+	test -n "$$img_uri" -a "$$img_uri" != "None" || { echo "No backend image - run: make aws-deploy-backend"; exit 1; }; \
+	cors="$(AWS_CORS_ORIGINS)"; \
+	if [ -z "$$cors" ]; then \
+		cors=$$($(call stack-output,$(FRONTEND_STACK),AllowedOrigins) 2>/dev/null | tr -d ' \t\r\n'); \
+		case "$$cors" in ""|None) cors="http://localhost:$(or $(FRONTEND_PORT),3000)" ;; esac; \
+	fi; \
+	case ",$$cors," in *,http://localhost:3000,*) ;; *) \
+		if [ -n "$$cors" ]; then cors="$$cors,http://localhost:3000"; else cors="http://localhost:3000"; fi ;; \
+	esac; \
+	echo "image=$$img_uri model=$(PARSER_MODEL) cors=$$cors alert=$$email"; \
+	$(call wait-stack-idle,$(AI_STACK)); \
+	$(call clear-failed-create,$(AI_STACK)); \
+	aws cloudformation deploy \
+		--stack-name $(AI_STACK) \
+		--template-file infra/ai.yml \
+		--capabilities CAPABILITY_NAMED_IAM \
+		--no-fail-on-empty-changeset \
+		$(STACK_TAGS) \
+		--parameter-overrides \
+			"ProjectName=$(PROJECT_NAME)" \
+			"ImageUri=$$img_uri" \
+			"Architecture=$(AWS_LAMBDA_ARCH)" \
+			"ParserModel=$(PARSER_MODEL)" \
+			"CognitoUserPoolId=$$pool" \
+			"CognitoClientId=$$client" \
+			"CorsOrigins=$$cors" \
+			"BudgetAlertEmail=$$email"
 	@$(MAKE) --no-print-directory aws-ai-env
 
 aws-ai-env: ## Print the AI stack outputs (ParserUrl to put in .env)

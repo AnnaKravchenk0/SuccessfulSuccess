@@ -95,8 +95,10 @@ Resources:
       Architectures:
         - !Ref Architecture
       Role: !GetAtt ParserRole.Arn
-      MemorySize: 512
-      Timeout: 30
+      # Container cold start is slow; 1024 MB + 60 s avoids Function URL init timeouts
+      # that the browser surfaces as "Could not reach the agenda parser".
+      MemorySize: 1024
+      Timeout: 60
       # No VpcConfig: needs public internet for Bedrock Runtime (and Cognito JWKS).
       LoggingConfig:
         LogGroup: !Ref ParserLogGroup

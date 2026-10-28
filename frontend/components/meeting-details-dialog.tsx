@@ -116,7 +116,7 @@ export function MeetingDetailsDialog({
               </p>
             ) : (
               <ol className="list-decimal space-y-1 pl-5 text-sm">
-                {meeting.agenda_items.map((item) => (
+                {(meeting.agenda_items ?? []).map((item) => (
                   <li key={item.id ?? item.topic}>
                     <span className="font-medium">{item.topic}</span>
                     {item.owner ? (

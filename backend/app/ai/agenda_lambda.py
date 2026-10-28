@@ -34,34 +34,18 @@ def _header(headers: dict[str, Any], name: str) -> str:
     return str(value or "")
 
 
-def _cors_origin(request_headers: dict[str, Any]) -> str:
-    """Echo an allowed Origin so browsers accept the Function URL response."""
-    origin = _header(request_headers, "origin")
-    allowed = settings.cors_origin_list
-    if origin and ("*" in allowed or origin in allowed):
-        return origin
-    if allowed and allowed[0] != "*":
-        return allowed[0]
-    return "*"
-
-
-def _response(
-    status: int,
-    body: dict[str, Any],
-    *,
-    request_headers: dict[str, Any] | None = None,
-) -> dict:
-    headers = {
-        "content-type": "application/json",
-        "access-control-allow-origin": _cors_origin(request_headers or {}),
-        "access-control-allow-headers": "authorization,content-type",
-        "access-control-allow-methods": "POST,OPTIONS",
+def _response(status: int, body: dict[str, Any]) -> dict:
+    # Do not set Access-Control-* here: ParserFunctionUrl.Cors already adds them.
+    # Duplicate ACAO headers make Chromium report net::ERR_FAILED with status 200.
+    return {
+        "statusCode": status,
+        "headers": {"content-type": "application/json"},
+        "body": json.dumps(body),
     }
-    return {"statusCode": status, "headers": headers, "body": json.dumps(body)}
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
-    # Function URL preflight (also handled by Lambda URL CORS config).
+    # OPTIONS preflight is answered by Function URL CORS (no invoke).
     method = (
         event.get("requestContext", {}).get("http", {}).get("method")
         or event.get("httpMethod")
@@ -69,12 +53,12 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     ).upper()
     headers = event.get("headers") or {}
     if method == "OPTIONS":
-        return _response(204, {}, request_headers=headers)
+        return _response(204, {})
 
     try:
         user = verify_access_token_sync(_header(headers, "authorization"))
     except (AuthError, AuthNotConfiguredError) as exc:
-        return _response(401, {"error": str(exc)}, request_headers=headers)
+        return _response(401, {"error": str(exc)})
 
     raw_body = event.get("body") or "{}"
     if event.get("isBase64Encoded"):
@@ -85,16 +69,15 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     try:
         body = json.loads(raw_body)
     except json.JSONDecodeError:
-        return _response(400, {"error": "body must be JSON"}, request_headers=headers)
+        return _response(400, {"error": "body must be JSON"})
 
     text = body.get("text")
     if not isinstance(text, str):
-        return _response(400, {"error": "text is required"}, request_headers=headers)
+        return _response(400, {"error": "text is required"})
     if len(text) > MAX_TEXT_CHARS:
         return _response(
             413,
             {"error": f"text exceeds {MAX_TEXT_CHARS} characters"},
-            request_headers=headers,
         )
 
     try:
@@ -106,20 +89,18 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         return _response(
             400,
             {"error": "today (YYYY-MM-DD) and tz are required"},
-            request_headers=headers,
         )
 
     started = time.monotonic()
     try:
         agenda, usage = parse_agenda(text, today, tz)
     except AgendaParseError as exc:
-        return _response(422, {"error": str(exc)}, request_headers=headers)
+        return _response(422, {"error": str(exc)})
     except Exception:
         log.exception("agenda parse failed")
         return _response(
             503,
             {"error": "the parser is busy or unavailable; try again shortly"},
-            request_headers=headers,
         )
 
     latency_ms = int((time.monotonic() - started) * 1000)
@@ -146,5 +127,4 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             "model": settings.parser_model,
             "prompt_version": PROMPT_VERSION,
         },
-        request_headers=headers,
     )
