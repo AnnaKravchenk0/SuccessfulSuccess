@@ -1,7 +1,7 @@
 resource "aws_cloudwatch_log_group" "parser" {
   name              = "/aws/lambda/${var.project_name}-agenda-parser"
   # Bumped 14 > 30 to prove a reviewed infra change (HCP apply after merge).
-  retention_in_days = 35
+  retention_in_days = 60
 }
 
 resource "aws_iam_role" "parser" {
