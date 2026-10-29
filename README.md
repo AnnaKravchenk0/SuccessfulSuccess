@@ -30,13 +30,11 @@ The backend applies migrations on start.
 
 Every page except the login page, and every `/api/v1` endpoint, needs a
 signed-in user, and each user sees only their own meetings. Sign-in is an AWS
-Cognito user pool (`infra/auth.yml`): email + password, and Google when it is
-configured. Even for local development the pool lives in AWS (it is free at
-this scale):
+Cognito user pool managed by Terraform (`infra/auth.tf`): email + password, and
+Google when configured. Even for local development the pool lives in AWS:
 
 ```bash
-make aws-deploy-auth   # create/update the user pool; allows http://localhost:$FRONTEND_PORT/
-make aws-auth-env      # prints COGNITO_* lines: paste them into .env
+make aws-auth-env      # prints COGNITO_* lines from terraform output; paste into .env
 docker compose up -d   # restart so the API and the frontend pick them up
 ```
 
@@ -115,14 +113,21 @@ Things that are already taken care of, and why:
 
 ## Deploy to AWS
 
-`infra/` holds four CloudFormation templates: `auth.yml` (Cognito sign-in),
-`ecr.yml` (image registry), `backend.yml` (API and database) and `frontend.yml`
-(site). `make` reads `.env`,
-so the `aws-*` targets pick up the credentials and settings from there; `.env` is
-gitignored, so real keys never reach the repository. The AWS CLI runs in the
-`amazon/aws-cli` container, so nothing has to be installed on the host besides
-Docker (`AWS=aws make aws-deploy` uses a local CLI instead, which is noticeably
-faster).
+Infrastructure is split:
+
+| Piece | Tool | Path |
+|---|---|---|
+| Cognito, weekly reports, agenda parser | **Terraform** (HCP applies after merge) | `infra/*.tf` — see [ADR 0007](docs/adr/0007-terraform.md) |
+| ECR, API Lambda + Aurora, S3 + CloudFront | **CloudFormation** | `infra/ecr.yml`, `backend.yml`, `frontend.yml` |
+
+`make` reads `.env` for credentials (gitignored). The AWS CLI runs in the
+`amazon/aws-cli` container (`AWS=aws make …` uses a host CLI). Terraform lives
+under `infra/`; preview with `make infra-plan` (never applies from the Makefile).
+Secrets such as `google_client_secret` and `database_url` go in HCP workspace
+variables or `TF_VAR_*`, not in committed `terraform.tfvars`.
+
+Bootstrap for HCP → AWS OIDC: [`tf-bootstrap/`](tf-bootstrap/). Connect the
+`successfulsuccess-dev` workspace to this repo with working directory `infra/`.
 
 ```
 browser ──https──→ CloudFront (optional custom domain) → private S3 bucket (Next.js static export)
@@ -145,9 +150,9 @@ make aws-whoami   # check the credentials work
 make aws-deploy   # sign-in, then the backend, then the frontend built against both
 ```
 
-`aws-deploy` runs `aws-deploy-auth` and then the two steps below in order: the
-backend checks tokens from the user pool, and the frontend bakes the API URL and
-the pool's ids into its build. Each step can also run on its own.
+`aws-deploy` runs the backend and frontend CloudFormation paths. Cognito /
+reports / AI are changed only through Terraform PRs (HCP plan + apply). Use
+`make aws-auth-env` / `make aws-ai-env` to print values for `.env`.
 
 The backend Lambda sits in a VPC with no internet access, so it cannot download
 the pool's signing keys itself; `aws-deploy-backend` fetches them
