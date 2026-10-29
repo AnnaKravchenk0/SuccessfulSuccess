@@ -10,7 +10,7 @@ terraform {
   cloud {
     organization = "ooad-AnnaKravchenk0"
     workspaces {
-      name = "successfulsuccess-dev"
+      name = "SuccessfulSuccess"
     }
   }
 }
